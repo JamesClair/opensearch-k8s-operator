@@ -2425,6 +2425,9 @@ spec:
                     type: array
                   defaultRepo:
                     type: string
+                  disableRestTLS:
+                    description: bool to allow disabling rest TLS
+                    type: boolean
                   drainDataNodes:
                     description: Drain data nodes controls whether to drain data notes
                       on rolling restart operations

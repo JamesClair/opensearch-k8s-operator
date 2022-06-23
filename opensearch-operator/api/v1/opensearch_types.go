@@ -47,6 +47,7 @@ type GeneralConfig struct {
 	PluginsList    []string `json:"pluginsList,omitempty"`
 	// Additional volumes to mount to all pods in the cluster
 	AdditionalVolumes []AdditionalVolume `json:"additionalVolumes,omitempty"`
+	DisableRestTLS bool `json:"disableRestTLS,omitempty"`
 }
 
 type NodePool struct {

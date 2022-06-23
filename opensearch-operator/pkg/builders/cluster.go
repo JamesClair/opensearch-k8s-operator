@@ -172,7 +172,7 @@ func NewSTSForNodePool(
 
 	// Because the http endpoint requires auth we need to do it as a curl script
 	httpPort := PortForCluster(cr)
-	curlCmd := "curl -k -u \"${OPENSEARCH_USER}:${OPENSEARCH_PASSWORD}\" --silent --fail https://localhost:" + fmt.Sprint(httpPort)
+	curlCmd := fmt.Sprintf("curl -k -u \"${OPENSEARCH_USER}:${OPENSEARCH_PASSWORD}\" --silent --fail %s", URLForCluster(cr))
 	readinessProbe := corev1.Probe{
 		InitialDelaySeconds: 30,
 		PeriodSeconds:       30,
@@ -693,7 +693,9 @@ func PortForCluster(cr *opsterv1.OpenSearchCluster) int32 {
 }
 func URLForCluster(cr *opsterv1.OpenSearchCluster) string {
 	httpPort := PortForCluster(cr)
-	return fmt.Sprintf("https://%s.svc.cluster.local:%d", DnsOfService(cr), httpPort)
+
+	restProtocol := helpers.GetRestProtocol(cr.Spec.General.DisableRestTLS)
+	return fmt.Sprintf("%s://%s.svc.cluster.local:%d", restProtocol, DnsOfService(cr), httpPort)
 	//return fmt.Sprintf("https://localhost:9212")
 }
 
