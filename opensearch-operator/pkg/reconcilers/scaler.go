@@ -54,7 +54,7 @@ func (r *ScalerReconciler) Reconcile() (ctrl.Result, error) {
 	results := &reconciler.CombinedResult{}
 	var err error
 	for _, nodePool := range r.instance.Spec.NodePools {
-		requeue, err = r.reconcileNodePool(&nodePool, )
+		requeue, err = r.reconcileNodePool(&nodePool)
 		if err != nil {
 			results.Combine(&ctrl.Result{Requeue: requeue}, err)
 		}
