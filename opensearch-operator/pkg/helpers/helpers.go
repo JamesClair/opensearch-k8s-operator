@@ -123,9 +123,9 @@ func ResolveClusterManagerRole(ver string) string {
 }
 
 func GetRestProtocol(disableRestTLS bool) string {
-	restProtocol := "HTTPS"
+	restProtocol := "https"
 	if disableRestTLS {
-		restProtocol = "HTTP"
+		restProtocol = "http"
 	}
 	return restProtocol
 }

@@ -11,40 +11,10 @@ spec:
     serviceName: search-indexing-svc-opensearch
     disableRestTLS: true
     additionalConfig:
-      # plugins.security.nodes_dn_dynamic_config_enabled: 'true'
-    # plugins.security: '["CN=kirk,OU=client,O=client,L=test, C=de"]'
       plugins.security.ssl.http.enabled: 'false'
-    #   plugins.security.allow_unsafe_democertificates: true
-    #   plugins.security.allow_default_init_securityindex: 'true'
-    #   plugins.security.audit.type: internal_opensearch
-    #   plugins.security.enable_snapshot_restore_privilege: 'true'
-    #   plugins.security.check_snapshot_restore_write_privileges: 'true'
-    #   plugins.security.restapi.roles_enabled: '["all_access", "security_rest_api_access"]'
-    #   plugins.security.system_indices.enabled: 'true'
-      # plugins.security.system_indices.indices: '[".opendistro-alerting-config", ".opendistro-alerting-alert*", ".opendistro-anomaly-results*", ".opendistro-anomaly-detector*", ".opendistro-anomaly-checkpoints", ".opendistro-anomaly-detection-state", ".opendistro-reports-*", ".opendistro-notifications-*", ".opendistro-notebooks", ".opensearch-observability", ".opendistro-asynchronous-search-response*", ".replication-metadata-store"]'
-  # security:
-  #   config:
-  #     securityConfigSecret:
-  #       name: search-indexing-svc-opensearch
-  #     adminCredentialsSecret:
-  #       name: search-indexing-svc-opensearch-admin
-  #     adminSecret:
-  #       name: ""
   dashboards:
-    # additionalConfig:
-    #   server.host: "0"
-    #   server.ssl.enabled: 'false'
-    #   opensearch.hosts: '["https://search-indexing-svc-opensearch:9200"]'
-    #   opensearch.ssl.verificationMode: 'none'
-    #   opensearch.username: "admin"
-    #   opensearch.password: "admin"
-    #   opensearch.requestHeadersWhitelist: '[ authorization,securitytenant ]'
-
-    #   opensearch_security.multitenancy.enabled: 'true'
-    #   opensearch_security.multitenancy.tenants.preferred: '["Global"]'
-    #   opensearch_security.readonly_mode.roles: '["kibana_read_only"]'
-      # Use this setting if you are running opensearch-dashboards without https
-      # opensearch_security.cookie.secure: 'false'
+    additionalConfig:
+      server.ssl.enabled: 'false'
     version: 1.2.0
     enable: true
     replicas: 2
@@ -68,7 +38,28 @@ spec:
             cpu: 1
       roles:
         - "master"
-        - "remote_cluster_client"
+        - "remote_cluster_client" # TODO: is this required for index migration
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway # switch to DoNotSchedule in non-personal envs
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway # switch to DoNotSchedule in non-personal envs
+      podTemplate: # podTemplate will be strategically merged with the default podTemplate
+        spec:
+          containers:
+            - name: opensearch
+              # ENABLE opensearch metrics via prometheus exporter
+              # 
+              # The following command and args override does the following:
+              # - Check if prometheus-exporter plugin is installed
+              # - If not, install it from https://github.com/aparo/opensearch-prometheus-exporter/releases/download/1.0.0/prometheus-exporter-1.0.0.zip
+              # - Then start opensearch
+              command: ["/bin/sh"]
+              args:
+                - -c
+                - "./bin/opensearch-plugin list | grep -q prometheus-exporter || ./bin/opensearch-plugin install -b https://github.com/aparo/opensearch-prometheus-exporter/releases/download/1.2.4/prometheus-exporter-1.2.4.zip; ./opensearch-docker-entrypoint.sh"
     - component: nodes
       replicas: 3
       diskSize: "20Gi"
@@ -83,4 +74,25 @@ spec:
       roles:
         - "data"
         - "ingest"
-        - "remote_cluster_client"
+        - "remote_cluster_client" # TODO: is this required for index migration
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway # switch to DoNotSchedule in non-personal envs
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway # switch to DoNotSchedule in non-personal envs
+      podTemplate: # podTemplate will be strategically merged with the default podTemplate
+        spec:
+          containers:
+            - name: opensearch
+              # ENABLE opensearch metrics via prometheus exporter
+              # 
+              # The following command and args override does the following:
+              # - Check if prometheus-exporter plugin is installed
+              # - If not, install it from https://github.com/aparo/opensearch-prometheus-exporter/releases/download/1.0.0/prometheus-exporter-1.0.0.zip
+              # - Then start opensearch
+              command: ["/bin/sh"]
+              args:
+                - -c
+                - "./bin/opensearch-plugin list | grep -q prometheus-exporter || ./bin/opensearch-plugin install -b https://github.com/aparo/opensearch-prometheus-exporter/releases/download/1.2.4/prometheus-exporter-1.2.4.zip; ./opensearch-docker-entrypoint.sh"

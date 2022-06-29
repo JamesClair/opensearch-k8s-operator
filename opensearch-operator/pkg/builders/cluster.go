@@ -2,10 +2,12 @@ package builders
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 
+	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -17,6 +19,7 @@ import (
 	opsterv1 "opensearch.opster.io/api/v1"
 	"opensearch.opster.io/pkg/helpers"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"k8s.io/apimachinery/pkg/util/strategicpatch"
 )
 
 /// package that declare and build all the resources that related to the OpenSearch cluster ///
@@ -36,6 +39,7 @@ func NewSTSForNodePool(
 	volumes []corev1.Volume,
 	volumeMounts []corev1.VolumeMount,
 	extraConfig map[string]string,
+	logger logr.Logger,
 ) *appsv1.StatefulSet {
 	//To make sure disksize is not passed as empty
 	var disksize string
@@ -152,6 +156,7 @@ func NewSTSForNodePool(
 		//vendor ="elasticsearch"
 	}
 
+	// TODO: set node.Jvm
 	var jvm string
 	if node.Jvm == "" {
 		jvm = "-Xmx512M -Xms512M"
@@ -187,7 +192,146 @@ func NewSTSForNodePool(
 		},
 	}
 
+	topologySpreadConstraints := node.TopologySpreadConstraints
+	if topologySpreadConstraints != nil {
+		for i := 0; i < len(topologySpreadConstraints); i++ {
+			top := &topologySpreadConstraints[i]
+			if top.LabelSelector == nil {
+				top.LabelSelector = &metav1.LabelSelector{
+					MatchLabels: labels,
+				}
+			}
+		}
+	}
+
 	image := helpers.ResolveImage(cr, &node)
+	defaultPodTemplate := corev1.PodTemplateSpec{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels:      labels,
+			Annotations: annotations,
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Env: []corev1.EnvVar{
+						{
+							Name:  "cluster.initial_master_nodes",
+							Value: BootstrapPodName(cr),
+						},
+						{
+							Name:  "discovery.seed_hosts",
+							Value: DiscoveryServiceName(cr),
+						},
+						{
+							Name:  "cluster.name",
+							Value: cr.Name,
+						},
+						{
+							Name:  "network.bind_host",
+							Value: "0.0.0.0",
+						},
+						{
+							// Make elasticsearch announce its hostname instead of IP so that certificates using the hostname can be verified
+							Name:      "network.publish_host",
+							ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{APIVersion: "v1", FieldPath: "metadata.name"}},
+						},
+						{
+							Name:  "OPENSEARCH_JAVA_OPTS",
+							Value: jvm,
+						},
+						{
+							Name:  "node.roles",
+							Value: strings.Join(selectedRoles, ","),
+						},
+						{
+							Name:  "OPENSEARCH_USER",
+							Value: username,
+						},
+						{
+							Name: "OPENSEARCH_PASSWORD",
+							ValueFrom: &corev1.EnvVarSource{
+								SecretKeyRef: &corev1.SecretKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: fmt.Sprintf("%s-admin-password", cr.Name),
+									},
+									Key: "password",
+								},
+							},
+						},
+					},
+					Name:            "opensearch",
+					Image:           image.GetImage(),
+					ImagePullPolicy: image.GetImagePullPolicy(),
+					Resources:       node.Resources,
+					Ports: []corev1.ContainerPort{
+						{
+							Name:          "http",
+							ContainerPort: cr.Spec.General.HttpPort,
+						},
+						{
+							Name:          "transport",
+							ContainerPort: 9300,
+						},
+					},
+					StartupProbe:   &probe,
+					LivenessProbe:  &probe,
+					ReadinessProbe: &readinessProbe,
+					VolumeMounts:   volumeMounts,
+				},
+			},
+			InitContainers: []corev1.Container{{
+				Name:    "init",
+				Image:   "public.ecr.aws/opsterio/busybox:latest",
+				Command: []string{"sh", "-c"},
+				Args:    []string{"chown -R 1000:1000 /usr/share/opensearch/data"},
+				SecurityContext: &corev1.SecurityContext{
+					RunAsUser: &runas,
+				},
+				VolumeMounts: []corev1.VolumeMount{
+					{
+						Name:      "data",
+						MountPath: "/usr/share/opensearch/data",
+					},
+				},
+			},},
+			Volumes:                   volumes,
+			ServiceAccountName:        cr.Spec.General.ServiceAccount,
+			NodeSelector:              node.NodeSelector,
+			Tolerations:               node.Tolerations,
+			Affinity:                  node.Affinity,
+			ImagePullSecrets:          image.ImagePullSecrets,
+			TopologySpreadConstraints: topologySpreadConstraints,
+		},
+	}
+
+	var finalPodTemplate corev1.PodTemplateSpec
+
+	// Do a strategicMergePatch if users specify custom podTemplate for the nodePool
+	if node.PodTemplate != nil {
+		logger.Info("PodTemplate config detected, attempting strategic merge w/ defaults.")
+		defaultPodTemplateJson, err := json.Marshal(defaultPodTemplate)
+		if err != nil {
+			logger.Error(err, "error marshalling defaultPodTemplate")
+		}
+
+		podTemplateJson, err := json.Marshal(node.PodTemplate)
+		if err != nil {
+			logger.Error(err, "error marshalling podTemplate")
+		}
+
+		patchedPodTemplateJson, err := strategicpatch.StrategicMergePatch(defaultPodTemplateJson, podTemplateJson, corev1.PodTemplateSpec{})
+		if err != nil {
+			logger.Error(err, "error merging podTemplate")
+		}
+		logger.Info("Merged podTemplate result: " + string(patchedPodTemplateJson))
+
+		finalPodTemplate = corev1.PodTemplateSpec{}
+		if err := json.Unmarshal(patchedPodTemplateJson, &finalPodTemplate); err != nil {
+			logger.Error(err, "Error while unmarshalling patchedPodTemplateJson: "+err.Error())
+		}
+	} else {
+		finalPodTemplate = defaultPodTemplate
+	}
 
 	var mainCommand []string
 	com := "./bin/opensearch-plugin install --batch"
@@ -226,109 +370,8 @@ func NewSTSForNodePool(
 					Type: appsv1.RollingUpdateStatefulSetStrategyType,
 				}
 			}(),
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels,
-					Annotations: annotations,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Env: []corev1.EnvVar{
-								{
-									Name:  "cluster.initial_master_nodes",
-									Value: BootstrapPodName(cr),
-								},
-								{
-									Name:  "discovery.seed_hosts",
-									Value: DiscoveryServiceName(cr),
-								},
-								{
-									Name:  "cluster.name",
-									Value: cr.Name,
-								},
-								{
-									Name:  "network.bind_host",
-									Value: "0.0.0.0",
-								},
-								{
-									// Make elasticsearch announce its hostname instead of IP so that certificates using the hostname can be verified
-									Name:      "network.publish_host",
-									ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{APIVersion: "v1", FieldPath: "metadata.name"}},
-								},
-								{
-									Name:  "OPENSEARCH_JAVA_OPTS",
-									Value: jvm,
-								},
-								{
-									Name:  "node.roles",
-									Value: strings.Join(selectedRoles, ","),
-								},
-								{
-									Name:  "http.port",
-									Value: fmt.Sprint(cr.Spec.General.HttpPort),
-								},
-								{
-									Name:  "OPENSEARCH_USER",
-									Value: username,
-								},
-								{
-									Name: "OPENSEARCH_PASSWORD",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: fmt.Sprintf("%s-admin-password", cr.Name),
-											},
-											Key: "password",
-										},
-									},
-								},
-							},
-							Name:            "opensearch",
-							Command:         mainCommand,
-							Image:           image.GetImage(),
-							ImagePullPolicy: image.GetImagePullPolicy(),
-							Resources:       node.Resources,
-							Ports: []corev1.ContainerPort{
-								{
-									Name:          "http",
-									ContainerPort: cr.Spec.General.HttpPort,
-								},
-								{
-									Name:          "transport",
-									ContainerPort: 9300,
-								},
-							},
-							StartupProbe:   &probe,
-							LivenessProbe:  &probe,
-							ReadinessProbe: &readinessProbe,
-							VolumeMounts:   volumeMounts,
-						},
-					},
-					InitContainers: []corev1.Container{{
-						Name:    "init",
-						Image:   "public.ecr.aws/opsterio/busybox:1.27.2-buildx",
-						Command: []string{"sh", "-c"},
-						Args:    []string{"chown -R 1000:1000 /usr/share/opensearch/data"},
-						SecurityContext: &corev1.SecurityContext{
-							RunAsUser: &runas,
-						},
-						VolumeMounts: []corev1.VolumeMount{
-							{
-								Name:      "data",
-								MountPath: "/usr/share/opensearch/data",
-							},
-						},
-					},
-					},
-					Volumes:            volumes,
-					ServiceAccountName: cr.Spec.General.ServiceAccount,
-					NodeSelector:       node.NodeSelector,
-					Tolerations:        node.Tolerations,
-					Affinity:           node.Affinity,
-					ImagePullSecrets:   image.ImagePullSecrets,
-				},
-			},
+
+			Template: finalPodTemplate,
 			VolumeClaimTemplates: func() []corev1.PersistentVolumeClaim {
 				if node.Persistence == nil || node.Persistence.PersistenceSource.PVC != nil {
 					return []corev1.PersistentVolumeClaim{pvc}
@@ -696,7 +739,6 @@ func URLForCluster(cr *opsterv1.OpenSearchCluster) string {
 
 	restProtocol := helpers.GetRestProtocol(cr.Spec.General.DisableRestTLS)
 	return fmt.Sprintf("%s://%s.svc.cluster.local:%d", restProtocol, DnsOfService(cr), httpPort)
-	//return fmt.Sprintf("https://localhost:9212")
 }
 
 func PasswordSecret(cr *opsterv1.OpenSearchCluster, password string) *corev1.Secret {
@@ -778,6 +820,7 @@ func NewSecurityconfigUpdateJob(
 	// The following curl command is added to make sure cluster is full connected before .opendistro_security is created.
 	arg := "ADMIN=/usr/share/opensearch/plugins/opensearch-security/tools/securityadmin.sh;" +
 		"chmod +x $ADMIN;" +
+		// TODO: update for tls support
 		fmt.Sprintf("until curl -k --silent https://%s.svc.cluster.local:%v; do", dns, instance.Spec.General.HttpPort) +
 		" echo 'Waiting to connect to the cluster'; sleep 120; " +
 		"done; " +

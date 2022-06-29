@@ -14,7 +14,6 @@ require (
 	github.com/kralicky/kmatch v0.0.0-20220710233303-ed73989bbe4a
 	github.com/mattn/go-colorable v0.1.12 // indirect
 	github.com/onsi/ginkgo v1.16.5
-	github.com/onsi/ginkgo/v2 v2.1.4 // indirect
 	github.com/onsi/gomega v1.19.0
 	github.com/opensearch-project/opensearch-go v1.1.0
 	github.com/phayes/freeport v0.0.0-20180830031419-95f893ade6f2

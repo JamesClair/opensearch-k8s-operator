@@ -186,10 +186,10 @@ func (r *ScalerReconciler) decreaseOneNode(currentStatus opsterv1.ComponentStatu
 }
 
 func (r *ScalerReconciler) excludeNode(
-		currentStatus opsterv1.ComponentStatus,
-		currentSts appsv1.StatefulSet,
-		nodePoolGroupName string,
-	) error {
+	currentStatus opsterv1.ComponentStatus,
+	currentSts appsv1.StatefulSet,
+	nodePoolGroupName string,
+) error {
 	lg := log.FromContext(r.ctx)
 	username, password, err := helpers.UsernameAndPassword(r.ctx, r.Client, r.instance)
 	annotations := map[string]string{"cluster-name": r.instance.GetName()}

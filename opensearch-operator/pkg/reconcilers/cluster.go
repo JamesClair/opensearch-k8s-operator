@@ -127,6 +127,7 @@ func (r *ClusterReconciler) reconcileNodeStatefulSet(nodePool opsterv1.NodePool,
 		r.reconcilerContext.Volumes,
 		r.reconcilerContext.VolumeMounts,
 		extraConfig,
+		r.logger,
 	)
 	if err := ctrl.SetControllerReference(r.instance, sts, r.Client.Scheme()); err != nil {
 		return &ctrl.Result{}, err
