@@ -78,6 +78,13 @@ func (r *UpgradeReconciler) Reconcile() (ctrl.Result, error) {
 	var err error
 
 	r.osClient, err = util.CreateClientForCluster(r.ctx, r.Client, r.instance, nil)
+	// If there is work to do create an Opensearch Client
+	username, password, err := helpers.UsernameAndPassword(r.ctx, r.Client, r.instance)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	restProtocol := helpers.GetRestProtocol(r.instance.Spec.General.DisableRestTLS)
+	clusterClient, err := services.NewOsClusterClient(fmt.Sprintf("%s://%s.%s:9200", restProtocol, r.instance.Spec.General.ServiceName, r.instance.Namespace), username, password)
 	if err != nil {
 		return ctrl.Result{}, err
 	}

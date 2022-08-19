@@ -47,6 +47,7 @@ type GeneralConfig struct {
 	PluginsList    []string `json:"pluginsList,omitempty"`
 	// Additional volumes to mount to all pods in the cluster
 	AdditionalVolumes []AdditionalVolume `json:"additionalVolumes,omitempty"`
+	DisableRestTLS bool `json:"disableRestTLS,omitempty"`
 }
 
 type NodePool struct {
@@ -63,6 +64,19 @@ type NodePool struct {
 	AdditionalConfig map[string]string           `json:"additionalConfig,omitempty"`
 	Labels           map[string]string           `json:"labels,omitempty"`
 	Env              []corev1.EnvVar             `json:"env,omitempty"`
+	// TopologySpreadConstraints describes how a group of pods ought to spread across topology
+	// domains. Scheduler will schedule pods in a way which abides by the constraints.
+	// All topologySpreadConstraints are ANDed.
+	// If LabelSelector is not specified for a TopologySpreadConstraint, following default label selector
+	// will be set for the TopologySpreadConstraint
+	//   "opster.io/opensearch-cluster": foo,
+	//   "opster.io/opensearch-nodepool": bar,
+	// +kubebuilder:validation:Optional
+	TopologySpreadConstraints []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty"`
+	// PodTemplate will be merged with a default PodTemplate.  The result will be used to update the NodePool's statefulset.
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	PodTemplate *corev1.PodTemplateSpec `json:"podTemplate,omitempty"`
 }
 
 // PersistencConfig defines options for data persistence

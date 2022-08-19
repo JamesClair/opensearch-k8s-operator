@@ -82,6 +82,7 @@ func HasOwnerReference(object client.Object, owner *opsterv1.OpenSearchCluster) 
 	return false
 }
 
+// TODO: Update with new fields
 func ComposeOpensearchCrd(clusterName string, namespace string) opsterv1.OpenSearchCluster {
 
 	OpensearchCluster := &opsterv1.OpenSearchCluster{

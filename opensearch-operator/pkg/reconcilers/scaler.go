@@ -185,7 +185,11 @@ func (r *ScalerReconciler) decreaseOneNode(currentStatus opsterv1.ComponentStatu
 	return false, err
 }
 
-func (r *ScalerReconciler) excludeNode(currentStatus opsterv1.ComponentStatus, currentSts appsv1.StatefulSet, nodePoolGroupName string) error {
+func (r *ScalerReconciler) excludeNode(
+	currentStatus opsterv1.ComponentStatus,
+	currentSts appsv1.StatefulSet,
+	nodePoolGroupName string,
+) error {
 	lg := log.FromContext(r.ctx)
 	username, password, err := helpers.UsernameAndPassword(r.ctx, r.Client, r.instance)
 	annotations := map[string]string{"cluster-name": r.instance.GetName()}
@@ -204,7 +208,8 @@ func (r *ScalerReconciler) excludeNode(currentStatus opsterv1.ComponentStatus, c
 		}
 	}()
 
-	clusterClient, err := services.NewOsClusterClient(fmt.Sprintf("https://localhost:%d", service.Spec.Ports[0].NodePort), username, password)
+	restProtocol := helpers.GetRestProtocol(r.instance.Spec.General.DisableRestTLS)
+	clusterClient, err := services.NewOsClusterClient(fmt.Sprintf("%s://localhost:%d", restProtocol, service.Spec.Ports[0].NodePort), username, password)
 	if err != nil {
 		lg.Error(err, "failed to create os client")
 		r.recorder.AnnotatedEventf(r.instance, annotations, "Warning", "Scaler", "Failed to create os client for scaling")
@@ -274,8 +279,8 @@ func (r *ScalerReconciler) drainNode(currentStatus opsterv1.ComponentStatus, cur
 			r.DeleteNodePortService(service)
 		}
 	}()
-
-	clusterClient, err := services.NewOsClusterClient(fmt.Sprintf("https://localhost:%d", service.Spec.Ports[0].NodePort), username, password)
+	restProtocol := helpers.GetRestProtocol(r.instance.Spec.General.DisableRestTLS)
+	clusterClient, err := services.NewOsClusterClient(fmt.Sprintf("%s://localhost:%d", restProtocol, service.Spec.Ports[0].NodePort), username, password)
 	if err != nil {
 		return err
 	}
@@ -371,7 +376,8 @@ func (r *ScalerReconciler) removeStatefulSet(sts appsv1.StatefulSet) (*ctrl.Resu
 		return nil, err
 	}
 	annotations := map[string]string{"cluster-name": r.instance.GetName()}
-	clusterClient, err := services.NewOsClusterClient(fmt.Sprintf("https://%s.%s:9200", r.instance.Spec.General.ServiceName, r.instance.Name), username, password)
+	restProtocol := helpers.GetRestProtocol(r.instance.Spec.General.DisableRestTLS)
+	clusterClient, err := services.NewOsClusterClient(fmt.Sprintf("%s://%s.%s:9200", restProtocol, r.instance.Spec.General.ServiceName, r.instance.Name), username, password)
 	if err != nil {
 		lg.Error(err, "failed to create os client")
 		r.recorder.AnnotatedEventf(r.instance, annotations, "Warning", "Scaler", "Failed to create os client")

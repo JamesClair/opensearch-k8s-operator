@@ -1,0 +1,98 @@
+apiVersion: opensearch.opster.io/v1
+kind: OpenSearchCluster
+metadata:
+  name: search-indexing-svc-opensearch
+  namespace: search-indexing-svc
+spec:
+  general:
+    version: 1.2.4
+    httpPort: 9200
+    vendor: opensearch
+    serviceName: search-indexing-svc-opensearch
+    disableRestTLS: true
+    additionalConfig:
+      plugins.security.ssl.http.enabled: 'false'
+  dashboards:
+    additionalConfig:
+      server.ssl.enabled: 'false'
+    version: 1.2.0
+    enable: true
+    replicas: 2
+    resources:
+      limits:
+        memory: "1Gi"
+        cpu: "500m"
+  confMgmt:
+    smartScaler: true
+  nodePools:
+    - component: masters
+      replicas: 3
+      diskSize: "10Gi"
+      NodeSelector:
+      resources:
+        limits:
+          memory: "2Gi"
+          cpu: 1
+        requests:
+            memory: "2Gi"
+            cpu: 1
+      roles:
+        - "master"
+        - "remote_cluster_client" # TODO: is this required for index migration
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway # switch to DoNotSchedule in non-personal envs
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway # switch to DoNotSchedule in non-personal envs
+      podTemplate: # podTemplate will be strategically merged with the default podTemplate
+        spec:
+          containers:
+            - name: opensearch
+              # ENABLE opensearch metrics via prometheus exporter
+              # 
+              # The following command and args override does the following:
+              # - Check if prometheus-exporter plugin is installed
+              # - If not, install it from https://github.com/aparo/opensearch-prometheus-exporter/releases/download/1.0.0/prometheus-exporter-1.0.0.zip
+              # - Then start opensearch
+              command: ["/bin/sh"]
+              args:
+                - -c
+                - "./bin/opensearch-plugin list | grep -q prometheus-exporter || ./bin/opensearch-plugin install -b https://github.com/aparo/opensearch-prometheus-exporter/releases/download/1.2.4/prometheus-exporter-1.2.4.zip; ./opensearch-docker-entrypoint.sh"
+    - component: nodes
+      replicas: 3
+      diskSize: "20Gi"
+      NodeSelector:
+      resources:
+        limits:
+          memory: "2Gi"
+          cpu: 1
+        requests:
+          memory: "2Gi"
+          cpu: 1
+      roles:
+        - "data"
+        - "ingest"
+        - "remote_cluster_client" # TODO: is this required for index migration
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway # switch to DoNotSchedule in non-personal envs
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway # switch to DoNotSchedule in non-personal envs
+      podTemplate: # podTemplate will be strategically merged with the default podTemplate
+        spec:
+          containers:
+            - name: opensearch
+              # ENABLE opensearch metrics via prometheus exporter
+              # 
+              # The following command and args override does the following:
+              # - Check if prometheus-exporter plugin is installed
+              # - If not, install it from https://github.com/aparo/opensearch-prometheus-exporter/releases/download/1.0.0/prometheus-exporter-1.0.0.zip
+              # - Then start opensearch
+              command: ["/bin/sh"]
+              args:
+                - -c
+                - "./bin/opensearch-plugin list | grep -q prometheus-exporter || ./bin/opensearch-plugin install -b https://github.com/aparo/opensearch-prometheus-exporter/releases/download/1.2.4/prometheus-exporter-1.2.4.zip; ./opensearch-docker-entrypoint.sh"

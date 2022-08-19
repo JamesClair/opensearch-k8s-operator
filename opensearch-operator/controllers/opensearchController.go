@@ -105,27 +105,26 @@ func (r *OpenSearchClusterReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			}
 		}
 
-	} else {
-		if helpers.ContainsString(r.Instance.GetFinalizers(), myFinalizerName) {
-			// our finalizer is present, so lets handle any external dependency
-			if result, err := r.deleteExternalResources(ctx); err != nil {
-				// if fail to delete the external dependency here, return with error
-				// so that it can be retried
-				return result, err
-			}
-
-			// remove our finalizer from the list and update it.
-			err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
-				if err := r.Get(ctx, req.NamespacedName, r.Instance); err != nil {
-					return err
-				}
-				controllerutil.RemoveFinalizer(r.Instance, myFinalizerName)
-				return r.Update(ctx, r.Instance)
-			})
-			if err != nil {
-				return ctrl.Result{}, err
-			}
+	} else if helpers.ContainsString(r.Instance.GetFinalizers(), myFinalizerName) {
+		// our finalizer is present, so lets handle any external dependency
+		if result, err := r.deleteExternalResources(ctx); err != nil {
+			// if fail to delete the external dependency here, return with error
+			// so that it can be retried
+			return result, err
 		}
+
+		// remove our finalizer from the list and update it.
+		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			if err := r.Get(ctx, req.NamespacedName, r.Instance); err != nil {
+				return err
+			}
+			controllerutil.RemoveFinalizer(r.Instance, myFinalizerName)
+			return r.Update(ctx, r.Instance)
+		})
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+	} else {
 		return ctrl.Result{}, nil
 	}
 

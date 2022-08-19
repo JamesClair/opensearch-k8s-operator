@@ -17,4 +17,9 @@ bin/
 testbin/
 *.bin
 
+# Editors
 .vscode
+.idea
+
+# MacOS
+.DS_Store
