@@ -83,7 +83,8 @@ docker-push: ## Push docker image with the manager.
 ##@ Deployment
 
 install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build config/crd | kubectl apply -f -
+# Switched to replace due to CRD size exceding the character limitation of `last-applied-configuration` annotation.  ONLY required when NOT using server-side-apply
+	$(KUSTOMIZE) build config/crd | kubectl replace -f -
 
 uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build config/crd | kubectl delete -f -
